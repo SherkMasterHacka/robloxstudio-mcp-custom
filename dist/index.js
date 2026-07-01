@@ -1894,6 +1894,55 @@ ${code}`
       ]
     };
   }
+  async auditApiDrift() {
+    const schemaToolNames = getAllTools().map((t) => t.name).sort();
+    const response = await this.client.request("/api/audit-tool-coverage", {});
+    const pluginTools = Array.isArray(response?.tools) ? response.tools : [];
+    const pluginToolNames = pluginTools.map((t) => t.tool).sort();
+    const schemaSet = new Set(schemaToolNames);
+    const pluginSet = new Set(pluginToolNames);
+    const missingFromPluginTracking = schemaToolNames.filter((n) => !pluginSet.has(n));
+    const staleInPluginTracking = pluginToolNames.filter((n) => !schemaSet.has(n));
+    const drift = {
+      layers: {
+        layer1_mcpServerToolSchema: { source: "this process (dist/index.js TOOL_DEFINITIONS)", count: schemaToolNames.length },
+        layer2_pluginTrackedTools: { source: "Studio plugin CANONICAL_TOOLS via /api/audit-tool-coverage", count: pluginToolNames.length },
+        layer3_pluginRouteAndHandlerIssues: { source: "Studio plugin routeMap + handler wiring", issueCount: Array.isArray(response?.issues) ? response.issues.length : 0 }
+      },
+      schemaVsPluginTrackingDrift: {
+        mismatchCount: missingFromPluginTracking.length + staleInPluginTracking.length,
+        missingFromPluginTracking,
+        // Tool exists in the live MCP schema but the plugin's own tracking list
+        // (CANONICAL_TOOLS) doesn't know about it -- the plugin-side audit
+        // itself is now out of date and should be regenerated.
+        staleInPluginTracking
+        // Tool is tracked on the plugin side but no longer exists in the live
+        // MCP schema -- dead tracking entry, safe to remove from the plugin.
+      },
+      pluginReportedIssues: response?.issues || [],
+      pluginCoveragePercent: response?.summary?.coveragePercent ?? null,
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(drift)
+        }
+      ]
+    };
+  }
+  async getPluginHealthScore() {
+    const response = await this.client.request("/api/plugin-health-score", {});
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(response)
+        }
+      ]
+    };
+  }
   static findProjectRoot(startDir) {
     let dir = path.resolve(startDir);
     while (true) {
@@ -3016,6 +3065,10 @@ var RobloxStudioMCPServer = class {
             return await this.tools.redo();
           case "audit_tool_coverage":
             return await this.tools.auditToolCoverage();
+          case "audit_api_drift":
+            return await this.tools.auditApiDrift();
+          case "get_plugin_health_score":
+            return await this.tools.getPluginHealthScore();
           case "search_assets":
             return await this.tools.searchAssets(args?.assetType, args?.query, args?.maxResults, args?.sortBy, args?.verifiedCreatorsOnly);
           case "get_asset_details":
@@ -4085,6 +4138,24 @@ var TOOL_DEFINITIONS = [
     name: "audit_tool_coverage",
     category: "read",
     description: "Audit which MCP tools have a matching implemented route on the Studio plugin side. Returns per-category coverage%, missing tools, duplicated routes, and orphaned handlers.",
+    inputSchema: {
+      type: "object",
+      properties: {}
+    }
+  },
+  {
+    name: "audit_api_drift",
+    category: "read",
+    description: "Detect drift between the live MCP server tool schema (this process, ground truth for what Claude can call) and what the Studio plugin's own tool tracking list believes exists. Catches cases where a tool was added/removed here but the plugin-side CANONICAL_TOOLS list wasn't updated to match -- a class of bug the plugin's own audit_tool_coverage cannot see because it only checks internal consistency, not against the real schema. Also surfaces the plugin's own route/handler/param-level issues (missing routes, duplicated routes, param mismatches, orphaned handlers) in the same report.",
+    inputSchema: {
+      type: "object",
+      properties: {}
+    }
+  },
+  {
+    name: "get_plugin_health_score",
+    category: "read",
+    description: "Get a 0-10 health score per dimension (Tool Coverage, API Consistency, Reliability, Context Efficiency, Diagnostics) computed from live audit data on the Studio plugin, plus which dimension is currently the biggest weakness. Dimensions that would require real usage telemetry to measure honestly (e.g. true token cost) are intentionally omitted rather than estimated.",
     inputSchema: {
       type: "object",
       properties: {}
