@@ -1,7 +1,7 @@
 import Utils from "../Utils";
 import Recording from "../Recording";
 
-const { getInstanceByPath, convertPropertyValue } = Utils;
+const { getInstanceByPath, convertPropertyValue, checkPathSafety } = Utils;
 const { beginRecording, finishRecording } = Recording;
 
 function setProperty(requestData: Record<string, unknown>) {
@@ -13,6 +13,9 @@ function setProperty(requestData: Record<string, unknown>) {
 		return { error: "Instance path and property name are required" };
 	}
 
+	const safetyError = checkPathSafety(instancePath);
+	if (safetyError) return { error: safetyError };
+
 	const instance = getInstanceByPath(instancePath);
 	if (!instance) return { error: `Instance not found: ${instancePath}` };
 	const recordingId = beginRecording(`Set ${propertyName} property`);
@@ -22,6 +25,10 @@ function setProperty(requestData: Record<string, unknown>) {
 	const [success, result] = pcall(() => {
 		if (propertyName === "Parent" || propertyName === "PrimaryPart") {
 			if (typeIs(propertyValue, "string")) {
+				if (propertyName === "Parent") {
+					const reparentError = checkPathSafety(propertyValue);
+					if (reparentError) error(reparentError);
+				}
 				const refInstance = getInstanceByPath(propertyValue);
 				if (refInstance) {
 					inst[propertyName] = refInstance;
@@ -75,6 +82,13 @@ function massSetProperty(requestData: Record<string, unknown>) {
 	const recordingId = beginRecording(`Mass set ${propertyName} property`);
 
 	for (const path of paths) {
+		const safetyError = checkPathSafety(path);
+		if (safetyError) {
+			failureCount++;
+			results.push({ path, success: false, error: safetyError });
+			continue;
+		}
+
 		const instance = getInstanceByPath(path);
 		if (instance) {
 			const [success, err] = pcall(() => {
@@ -135,6 +149,9 @@ function setProperties(requestData: Record<string, unknown>) {
 	if (!instancePath || !properties || !typeIs(properties, "table")) {
 		return { error: "Instance path and properties object are required" };
 	}
+
+	const safetyError = checkPathSafety(instancePath);
+	if (safetyError) return { error: safetyError };
 
 	const instance = getInstanceByPath(instancePath);
 	if (!instance) return { error: `Instance not found: ${instancePath}` };
