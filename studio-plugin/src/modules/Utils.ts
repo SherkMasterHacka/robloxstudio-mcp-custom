@@ -34,6 +34,15 @@ function isPathProtected(path: string): boolean {
 	return checkPathSafety(path) !== undefined;
 }
 
+// Returns true if `instance` IS a protected top-level service itself
+// (e.g. game.CoreGui). Used to prune recursive traversals (like
+// find-and-replace across all scripts) before they descend into
+// off-limits subtrees, since those traversals don't go through
+// checkPathSafety per-node.
+function isProtectedTopLevelInstance(instance: Instance): boolean {
+	return instance.Parent === game && PROTECTED_TOP_LEVEL[instance.Name] === true;
+}
+
 function safeCall<T>(func: (...args: never[]) => T, ...args: never[]): T | undefined {
 	const [success, result] = pcall(func, ...args);
 	if (success) {
@@ -351,4 +360,5 @@ export = {
 	compareVersions,
 	checkPathSafety,
 	isPathProtected,
+	isProtectedTopLevelInstance,
 };

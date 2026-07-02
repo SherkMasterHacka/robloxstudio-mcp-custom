@@ -3,7 +3,7 @@ import Recording from "../Recording";
 
 const ScriptEditorService = game.GetService("ScriptEditorService");
 
-const { getInstancePath, getInstanceByPath, readScriptSource, splitLines, joinLines } = Utils;
+const { getInstancePath, getInstanceByPath, readScriptSource, splitLines, joinLines, checkPathSafety, isProtectedTopLevelInstance } = Utils;
 const { beginRecording, finishRecording } = Recording;
 
 function normalizeEscapes(s: string): string {
@@ -125,6 +125,9 @@ function setScriptSource(requestData: Record<string, unknown>) {
 		return { error: `Instance is not a script-like object: ${instance.ClassName}` };
 	}
 
+	const setSourceSafetyError = checkPathSafety(instancePath);
+	if (setSourceSafetyError) return { error: setSourceSafetyError };
+
 	const sourceToSet = normalizeEscapes(newSource);
 	const recordingId = beginRecording(`Set script source: ${instance.Name}`);
 
@@ -217,6 +220,9 @@ function editScriptLines(requestData: Record<string, unknown>) {
 		return { error: `Instance is not a script-like object: ${instance.ClassName}` };
 	}
 
+	const editSafetyError = checkPathSafety(instancePath);
+	if (editSafetyError) return { error: editSafetyError };
+
 	const recordingId = beginRecording(`Edit script: ${instance.Name}`);
 
 	const [success, result] = pcall(() => {
@@ -275,6 +281,9 @@ function insertScriptLines(requestData: Record<string, unknown>) {
 		return { error: `Instance is not a script-like object: ${instance.ClassName}` };
 	}
 
+	const insertSafetyError = checkPathSafety(instancePath);
+	if (insertSafetyError) return { error: insertSafetyError };
+
 	const recordingId = beginRecording(`Insert script lines after line ${afterLine}: ${instance.Name}`);
 
 	const [success, result] = pcall(() => {
@@ -324,6 +333,9 @@ function deleteScriptLines(requestData: Record<string, unknown>) {
 	if (!instance.IsA("LuaSourceContainer")) {
 		return { error: `Instance is not a script-like object: ${instance.ClassName}` };
 	}
+
+	const deleteSafetyError = checkPathSafety(instancePath);
+	if (deleteSafetyError) return { error: deleteSafetyError };
 
 	const recordingId = beginRecording(`Delete script lines ${startLine}-${endLine}: ${instance.Name}`);
 
@@ -406,6 +418,11 @@ function findAndReplaceInScripts(requestData: Record<string, unknown>) {
 		return { error: "Case-insensitive Lua pattern replacement is not supported. Use caseSensitive: true with usePattern: true, or use literal matching." };
 	}
 
+	if (searchPath !== "") {
+		const pathSafetyError = checkPathSafety(searchPath);
+		if (pathSafetyError) return { error: pathSafetyError };
+	}
+
 	const startInstance = searchPath !== "" ? getInstanceByPath(searchPath) : game;
 	if (!startInstance) return { error: `Path not found: ${searchPath}` };
 
@@ -425,6 +442,9 @@ function findAndReplaceInScripts(requestData: Record<string, unknown>) {
 
 	function processInstance(instance: Instance) {
 		if (hitLimit) return;
+		// Never descend into protected top-level services (CoreGui, CorePackages,
+		// etc.) even when the traversal starts from `game` by default.
+		if (isProtectedTopLevelInstance(instance)) return;
 
 		if (instance.IsA("LuaSourceContainer")) {
 			if (classFilter && !instance.ClassName.lower().find(classFilter.lower())[0]) return;
