@@ -110,11 +110,18 @@ function processRequest(request: RequestPayload): unknown {
 
 function sendResponse(conn: Connection, requestId: string, responseData: unknown) {
 	pcall(() => {
+		let bodyStr = HttpService.JSONEncode({ requestId, response: responseData });
+		if (bodyStr.size() > 15 * 1024 * 1024) {
+			bodyStr = HttpService.JSONEncode({
+				requestId,
+				response: { error: "Payload too large (exceeds 15MB). Please request less data or use pagination." }
+			});
+		}
 		HttpService.RequestAsync({
 			Url: `${conn.serverUrl}/response`,
 			Method: "POST",
 			Headers: { "Content-Type": "application/json" },
-			Body: HttpService.JSONEncode({ requestId, response: responseData }),
+			Body: bodyStr,
 		});
 	});
 }
@@ -304,6 +311,21 @@ function activatePlugin(connIndex?: number) {
 		if (!conn.heartbeatConnection) {
 			conn.heartbeatConnection = RunService.Heartbeat.Connect(() => {
 				const now = tick();
+
+				const notifications = State.popNotifications();
+				if (notifications.size() > 0) {
+					task.spawn(() => {
+						pcall(() => {
+							HttpService.RequestAsync({
+								Url: `${conn.serverUrl}/notify`,
+								Method: "POST",
+								Headers: { "Content-Type": "application/json" },
+								Body: HttpService.JSONEncode({ notifications, timestamp: tick() }),
+							});
+						});
+					});
+				}
+
 				const currentInterval = conn.consecutiveFailures > 5 ? conn.currentRetryDelay : conn.pollInterval;
 				if (now - conn.lastPoll > currentInterval) {
 					conn.lastPoll = now;
@@ -370,19 +392,19 @@ function checkForUpdates() {
 	task.spawn(() => {
 		const [success, result] = pcall(() => {
 			return HttpService.RequestAsync({
-				Url: "https://registry.npmjs.org/robloxstudio-mcp/latest",
+				Url: "https://api.github.com/repos/SherkMasterHacka/robloxstudio-mcp-custom/releases/latest",
 				Method: "GET",
 				Headers: { Accept: "application/json" },
 			});
 		});
 
 		if (success && result.Success) {
-			const [ok, data] = pcall(() => HttpService.JSONDecode(result.Body) as { version?: string });
-			if (ok && data?.version) {
-				const latestVersion = data.version;
+			const [ok, data] = pcall(() => HttpService.JSONDecode(result.Body) as { tag_name?: string });
+			if (ok && data?.tag_name) {
+				const latestVersion = data.tag_name.gsub("^v", "")[0] as string;
 				if (Utils.compareVersions(State.CURRENT_VERSION, latestVersion) < 0) {
 					const ui = UI.getElements();
-					ui.updateBannerText.Text = `v${latestVersion} available - github.com/boshyxd/robloxstudio-mcp`;
+					ui.updateBannerText.Text = `v${latestVersion} available - github.com/SherkMasterHacka/robloxstudio-mcp-custom`;
 					ui.updateBanner.Visible = true;
 					ui.contentFrame.Position = new UDim2(0, 8, 0, 92);
 					ui.contentFrame.Size = new UDim2(1, -16, 1, -100);

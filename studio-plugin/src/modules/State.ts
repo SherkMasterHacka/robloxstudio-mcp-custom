@@ -1,9 +1,10 @@
-import { Connection } from "../types";
+import { Connection, NotificationPayload } from "../types";
 
 const CURRENT_VERSION = "__VERSION__";
 const MAX_CONNECTIONS = 5;
 const BASE_PORT = 58741;
 let activeTabIndex = 0;
+let notifications: NotificationPayload[] = [];
 
 function createConnection(port: number): Connection {
 	return {
@@ -79,6 +80,16 @@ function getConnections(): Connection[] {
 	return connections;
 }
 
+function queueNotification(eventType: string, data?: Record<string, unknown>): void {
+	notifications.push({ eventType, data, timestamp: tick() });
+}
+
+function popNotifications(): NotificationPayload[] {
+	const current = notifications;
+	notifications = [];
+	return current;
+}
+
 export = {
 	CURRENT_VERSION,
 	MAX_CONNECTIONS,
@@ -91,4 +102,6 @@ export = {
 	getActiveTabIndex,
 	setActiveTabIndex,
 	getConnections,
+	queueNotification,
+	popNotifications,
 };

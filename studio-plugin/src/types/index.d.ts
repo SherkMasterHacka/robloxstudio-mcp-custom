@@ -39,6 +39,12 @@ export interface ReadyResponse {
 	assignedRole?: string;
 }
 
+export interface NotificationPayload {
+	eventType: string;
+	data?: Record<string, unknown>;
+	timestamp: number;
+}
+
 declare global {
 	function loadstring(code: string): LuaTuple<[(() => unknown) | undefined, string?]>;
 }

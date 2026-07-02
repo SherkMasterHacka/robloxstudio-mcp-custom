@@ -20,11 +20,11 @@
     "model-context-protocol",
     "game-development"
   ],
-  "author": "",
+  "author": "SherkMasterHacka",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_USERNAME/YOUR_REPO.git"
+    "url": "https://github.com/SherkMasterHacka/robloxstudio-mcp-custom.git"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
