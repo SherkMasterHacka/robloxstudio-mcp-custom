@@ -1,7 +1,7 @@
 import Utils from "../Utils";
 import Recording from "../Recording";
 
-const { getInstancePath, getInstanceByPath, convertPropertyValue } = Utils;
+const { getInstancePath, getInstanceByPath, convertPropertyValue, checkPathSafety } = Utils;
 const { beginRecording, finishRecording } = Recording;
 
 type ProcessedCreateResult =
@@ -94,6 +94,9 @@ function createObject(requestData: Record<string, unknown>) {
 		return { error: "Class name and parent are required" };
 	}
 
+	const safetyError = checkPathSafety(parentPath);
+	if (safetyError) return { error: safetyError };
+
 	const parentInstance = getInstanceByPath(parentPath);
 	if (!parentInstance) return { error: `Parent instance not found: ${parentPath}` };
 	const recordingId = beginRecording(`Create ${className}`);
@@ -134,6 +137,9 @@ function deleteObject(requestData: Record<string, unknown>) {
 	const instancePath = requestData.instancePath as string;
 	if (!instancePath) return { error: "Instance path is required" };
 
+	const safetyError = checkPathSafety(instancePath);
+	if (safetyError) return { error: safetyError };
+
 	const instance = getInstanceByPath(instancePath);
 	if (!instance) return { error: `Instance not found: ${instancePath}` };
 	if (instance === game) return { error: "Cannot delete the game instance" };
@@ -165,6 +171,12 @@ function massCreateObjects(requestData: Record<string, unknown>) {
 		const className = objData.className as string;
 		const parentPath = objData.parent as string;
 		const name = objData.name as string | undefined;
+
+		const safetyError = checkPathSafety(parentPath);
+		if (safetyError) {
+			return { error: safetyError, className, parentPath };
+		}
+
 		const parentInstance = getInstanceByPath(parentPath);
 		if (!parentInstance) {
 			return { error: "Parent instance not found", className, parentPath };
@@ -198,6 +210,9 @@ function performSmartDuplicate(requestData: Record<string, unknown>, useRecordin
 	if (!instancePath || !count || count < 1) {
 		return { error: "Instance path and count > 0 are required" };
 	}
+
+	const safetyError = checkPathSafety(instancePath);
+	if (safetyError) return { error: safetyError };
 
 	const instance = getInstanceByPath(instancePath);
 	if (!instance) return { error: `Instance not found: ${instancePath}` };
@@ -331,6 +346,9 @@ function cloneObject(requestData: Record<string, unknown>) {
 		return { error: "Instance path and target parent path are required" };
 	}
 
+	const safetyError = checkPathSafety(instancePath) ?? checkPathSafety(targetParentPath);
+	if (safetyError) return { error: safetyError };
+
 	const instance = getInstanceByPath(instancePath);
 	if (!instance) return { error: `Instance not found: ${instancePath}` };
 
@@ -368,6 +386,9 @@ function moveObject(requestData: Record<string, unknown>) {
 		return { error: "Instance path and target parent path are required" };
 	}
 
+	const safetyError = checkPathSafety(instancePath) ?? checkPathSafety(targetParentPath);
+	if (safetyError) return { error: safetyError };
+
 	const instance = getInstanceByPath(instancePath);
 	if (!instance) return { error: `Instance not found: ${instancePath}` };
 
@@ -403,6 +424,9 @@ function createUITree(requestData: Record<string, unknown>) {
 	if (!tree || !parentPath) {
 		return { error: "Tree object and parentPath are required" };
 	}
+
+	const safetyError = checkPathSafety(parentPath);
+	if (safetyError) return { error: safetyError };
 
 	const parent = getInstanceByPath(parentPath);
 	if (!parent) return { error: `Parent not found: ${parentPath}` };
