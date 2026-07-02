@@ -1,5 +1,39 @@
 const ScriptEditorService = game.GetService("ScriptEditorService");
 
+// --- Safety guard -----------------------------------------------------
+// Top-level services that AI-driven tool calls must never be able to
+// mutate (create/delete/move/reparent-into/set-property/set-attribute/
+// script-edit). These contain engine/plugin internals or things that can
+// break the whole Studio session or leak security-sensitive state.
+const PROTECTED_TOP_LEVEL: Record<string, boolean> = {
+	CoreGui: true,
+	CorePackages: true,
+	CoreScriptSyncService: true,
+	RobloxPluginGuiService: true,
+	StudioService: true,
+};
+
+function getTopLevelName(path: string): string {
+	const cleaned = path.gsub("^game%.", "")[0];
+	const first = cleaned.gsub("%..*$", "")[0];
+	return first;
+}
+
+// Returns an error message string if the path is not safe to mutate,
+// or undefined if the path is safe.
+function checkPathSafety(path: string): string | undefined {
+	if (!path || path === "game") return undefined;
+	const top = getTopLevelName(path);
+	if (PROTECTED_TOP_LEVEL[top]) {
+		return `Refusing to modify protected path "${path}": "${top}" is off-limits to MCP tool calls.`;
+	}
+	return undefined;
+}
+
+function isPathProtected(path: string): boolean {
+	return checkPathSafety(path) !== undefined;
+}
+
 function safeCall<T>(func: (...args: never[]) => T, ...args: never[]): T | undefined {
 	const [success, result] = pcall(func, ...args);
 	if (success) {
@@ -315,4 +349,6 @@ export = {
 	convertPropertyValue,
 	evaluateFormula,
 	compareVersions,
+	checkPathSafety,
+	isPathProtected,
 };
