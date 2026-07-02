@@ -17,6 +17,25 @@ import { Connection, RequestPayload, PollResponse, ReadyResponse } from "../type
 const instanceId = HttpService.GenerateGUID(false);
 let assignedRole: string | undefined;
 
+const MAX_SEEN_REQUESTS = 200;
+const seenRequestIds = new Set<string>();
+const seenRequestOrder: string[] = [];
+
+function markAndCheckDuplicate(requestId: string): boolean {
+	if (seenRequestIds.has(requestId)) {
+		return true;
+	}
+	seenRequestIds.add(requestId);
+	seenRequestOrder.push(requestId);
+	if (seenRequestOrder.size() > MAX_SEEN_REQUESTS) {
+		const oldest = seenRequestOrder.shift();
+		if (oldest !== undefined) {
+			seenRequestIds.delete(oldest);
+		}
+	}
+	return false;
+}
+
 function detectRole(): string {
 	if (!RunService.IsRunMode()) return "edit";
 	if (RunService.IsServer()) return "server";
@@ -206,14 +225,19 @@ function pollForRequests(connIndex: number) {
 		}
 
 		if (data.request && mcpConnected) {
-			task.spawn(() => {
-				const [ok, response] = pcall(() => processRequest(data.request!));
-				if (ok) {
-					sendResponse(conn, data.requestId!, response);
-				} else {
-					sendResponse(conn, data.requestId!, { error: tostring(response) });
-				}
-			});
+			const requestId = data.requestId as string;
+			if (markAndCheckDuplicate(requestId)) {
+				warn(`MCP Plugin: ignoring duplicate requestId ${requestId}`);
+			} else {
+				task.spawn(() => {
+					const [ok, response] = pcall(() => processRequest(data.request!));
+					if (ok) {
+						sendResponse(conn, requestId, response);
+					} else {
+						sendResponse(conn, requestId, { error: tostring(response) });
+					}
+				});
+			}
 		}
 	} else if (conn.isActive) {
 		conn.consecutiveFailures++;
